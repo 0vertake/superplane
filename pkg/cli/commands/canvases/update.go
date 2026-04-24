@@ -229,9 +229,36 @@ func (c *updateCommand) Execute(ctx core.CommandContext) error {
 				}
 			}
 		}
-		_, err := fmt.Fprintf(stdout, "Integrations: %d\n", len(integrations))
-		return err
+		if _, err := fmt.Fprintf(stdout, "Integrations: %d\n", len(integrations)); err != nil {
+			return err
+		}
+		hasErrors, err := printNodeMessages(stdout, spec.GetNodes())
+		if err != nil {
+			return err
+		}
+		if hasErrors {
+			return fmt.Errorf("canvas has node errors")
+		}
+		return nil
 	})
+}
+
+func printNodeMessages(w io.Writer, nodes []openapi_client.SuperplaneComponentsNode) (bool, error) {
+	hasErrors := false
+	for _, node := range nodes {
+		if msg := node.GetErrorMessage(); msg != "" {
+			if _, err := fmt.Fprintf(w, "Node %q error: %s\n", node.GetId(), msg); err != nil {
+				return false, err
+			}
+			hasErrors = true
+		}
+		if msg := node.GetWarningMessage(); msg != "" {
+			if _, err := fmt.Fprintf(w, "Node %q warning: %s\n", node.GetId(), msg); err != nil {
+				return false, err
+			}
+		}
+	}
+	return hasErrors, nil
 }
 
 func parseAutoLayout(value string, scopeValue string, nodeIDs []string) (*openapi_client.CanvasesCanvasAutoLayout, error) {

@@ -179,6 +179,37 @@ func TestCreateCommandFailsWithoutArgs(t *testing.T) {
 	require.Contains(t, err.Error(), "either --file or <canvas-name> is required")
 }
 
+func TestCreateCommandPrintsNodeErrors(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"canvas":{"metadata":{"id":"abc-123","name":"my-canvas"},"spec":{"nodes":[{"id":"node-1","errorMessage":"invalid component config"}],"edges":[]}}}`))
+	}))
+	t.Cleanup(server.Close)
+
+	ctx, stdout := newCreateCommandContextForTest(t, server, "text")
+	ctx.Args = []string{"my-canvas"}
+
+	err := (&createCommand{}).Execute(ctx)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "canvas has node errors")
+	require.Contains(t, stdout.String(), `Node "node-1" error: invalid component config`)
+}
+
+func TestCreateCommandPrintsNodeWarnings(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"canvas":{"metadata":{"id":"abc-123","name":"my-canvas"},"spec":{"nodes":[{"id":"node-1","warningMessage":"deprecated config"}],"edges":[]}}}`))
+	}))
+	t.Cleanup(server.Close)
+
+	ctx, stdout := newCreateCommandContextForTest(t, server, "text")
+	ctx.Args = []string{"my-canvas"}
+
+	err := (&createCommand{}).Execute(ctx)
+	require.NoError(t, err)
+	require.Contains(t, stdout.String(), `Node "node-1" warning: deprecated config`)
+}
+
 func writeTestCanvasFile(t *testing.T, name string) string {
 	t.Helper()
 	dir := t.TempDir()

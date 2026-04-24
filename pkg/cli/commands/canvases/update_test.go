@@ -426,6 +426,140 @@ func TestUpdateFromFileDisableChangeManagementFailsWhenOrganizationEnforcesIt(t 
 	})
 }
 
+func TestUpdateFromFilePrintsNodeErrors(t *testing.T) {
+	canvasID := "4e9ae08d-0363-40d2-ba2c-5f6389a418d8"
+
+	server := newAPITestServer(
+		t,
+		requestExpectation{
+			method: http.MethodGet,
+			path:   "/api/v1/canvases/" + canvasID,
+			handle: func(t *testing.T, w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"canvas":{"metadata":{"id":"` + canvasID + `","name":"test-canvas"},"spec":{}}}`))
+			},
+		},
+		requestExpectation{
+			method: http.MethodGet,
+			path:   "/api/v1/canvases/" + canvasID + "/versions",
+			handle: func(t *testing.T, w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"versions":[]}`))
+			},
+		},
+		requestExpectation{
+			method: http.MethodPost,
+			path:   "/api/v1/canvases/" + canvasID + "/versions",
+			handle: func(t *testing.T, w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"version":{"metadata":{"id":"ver-1","canvasId":"` + canvasID + `"}}}`))
+			},
+		},
+		requestExpectation{
+			method: http.MethodPut,
+			path:   "/api/v1/canvases/" + canvasID + "/versions",
+			handle: func(t *testing.T, w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"version":{"metadata":{"id":"ver-1","canvasId":"` + canvasID + `"},"spec":{"nodes":[{"id":"node-1","errorMessage":"invalid component config"}],"edges":[]}}}`))
+			},
+		},
+		requestExpectation{
+			method: http.MethodPatch,
+			path:   "/api/v1/canvases/" + canvasID + "/versions/ver-1/publish",
+			handle: func(t *testing.T, w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"version":{"metadata":{"id":"ver-1","canvasId":"` + canvasID + `"}}}`))
+			},
+		},
+	)
+
+	filePath := writeSimpleTestCanvasFile(t, canvasID)
+	file := filePath
+	draft := false
+	ctx, stdout := newCreateCommandContextForTest(t, server.server, "text")
+
+	err := (&updateCommand{file: &file, draft: &draft}).Execute(ctx)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "canvas has node errors")
+	require.Contains(t, stdout.String(), `Node "node-1" error: invalid component config`)
+}
+
+func TestUpdateFromFilePrintsNodeWarnings(t *testing.T) {
+	canvasID := "4e9ae08d-0363-40d2-ba2c-5f6389a418d8"
+
+	server := newAPITestServer(
+		t,
+		requestExpectation{
+			method: http.MethodGet,
+			path:   "/api/v1/canvases/" + canvasID,
+			handle: func(t *testing.T, w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"canvas":{"metadata":{"id":"` + canvasID + `","name":"test-canvas"},"spec":{}}}`))
+			},
+		},
+		requestExpectation{
+			method: http.MethodGet,
+			path:   "/api/v1/canvases/" + canvasID + "/versions",
+			handle: func(t *testing.T, w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"versions":[]}`))
+			},
+		},
+		requestExpectation{
+			method: http.MethodPost,
+			path:   "/api/v1/canvases/" + canvasID + "/versions",
+			handle: func(t *testing.T, w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"version":{"metadata":{"id":"ver-1","canvasId":"` + canvasID + `"}}}`))
+			},
+		},
+		requestExpectation{
+			method: http.MethodPut,
+			path:   "/api/v1/canvases/" + canvasID + "/versions",
+			handle: func(t *testing.T, w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"version":{"metadata":{"id":"ver-1","canvasId":"` + canvasID + `"},"spec":{"nodes":[{"id":"node-1","warningMessage":"deprecated config"}],"edges":[]}}}`))
+			},
+		},
+		requestExpectation{
+			method: http.MethodPatch,
+			path:   "/api/v1/canvases/" + canvasID + "/versions/ver-1/publish",
+			handle: func(t *testing.T, w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"version":{"metadata":{"id":"ver-1","canvasId":"` + canvasID + `"}}}`))
+			},
+		},
+	)
+
+	filePath := writeSimpleTestCanvasFile(t, canvasID)
+	file := filePath
+	draft := false
+	ctx, stdout := newCreateCommandContextForTest(t, server.server, "text")
+
+	err := (&updateCommand{file: &file, draft: &draft}).Execute(ctx)
+	require.NoError(t, err)
+	require.Contains(t, stdout.String(), `Node "node-1" warning: deprecated config`)
+}
+
+func writeSimpleTestCanvasFile(t *testing.T, canvasID string) string {
+	t.Helper()
+
+	dir := t.TempDir()
+	filePath := filepath.Join(dir, "canvas.yaml")
+	content := []byte(
+		"apiVersion: v1\n" +
+			"kind: Canvas\n" +
+			"metadata:\n" +
+			"  id: " + canvasID + "\n" +
+			"  name: test-canvas\n" +
+			"spec:\n" +
+			"  nodes: []\n" +
+			"  edges: []\n",
+	)
+	require.NoError(t, os.WriteFile(filePath, content, 0o644))
+	return filePath
+}
+
 func writeTestCanvasFileWithChangeManagementEnabled(t *testing.T, canvasID string, enabled bool) string {
 	t.Helper()
 

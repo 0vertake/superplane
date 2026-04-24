@@ -135,7 +135,16 @@ func validateAndPrintCreateResponse(
 	}
 
 	return ctx.Renderer.RenderText(func(stdout io.Writer) error {
-		_, err := fmt.Fprintf(stdout, "Canvas %q created (ID: %s)\n", canvas.Metadata.GetName(), canvas.Metadata.GetId())
-		return err
+		if _, err := fmt.Fprintf(stdout, "Canvas %q created (ID: %s)\n", canvas.Metadata.GetName(), canvas.Metadata.GetId()); err != nil {
+			return err
+		}
+		hasErrors, err := printNodeMessages(stdout, canvas.GetSpec().GetNodes())
+		if err != nil {
+			return err
+		}
+		if hasErrors {
+			return fmt.Errorf("canvas has node errors")
+		}
+		return nil
 	})
 }
